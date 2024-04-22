@@ -40,9 +40,10 @@ func NewPublisher(config PublisherConfig, logger watermill.LoggerAdapter) (*Publ
 }
 
 type PublisherConfig struct {
-	Client     redis.UniversalClient
-	Marshaller Marshaller
-	Maxlens    map[string]int64
+	Client        redis.UniversalClient
+	Marshaller    Marshaller
+	Maxlens       map[string]int64
+	DefaultMaxlen int64
 }
 
 func (c *PublisherConfig) setDefaults() {
@@ -55,10 +56,15 @@ func (c *PublisherConfig) Validate() error {
 	if c.Client == nil {
 		return errors.New("redis client is empty")
 	}
+
+	if c.DefaultMaxlen < 0 {
+		// zero maxlen stream indicates unlimited stream length
+		c.DefaultMaxlen = 0
+	}
+
 	for topic, maxlen := range c.Maxlens {
 		if maxlen < 0 {
-			// zero maxlen stream indicates unlimited stream length
-			c.Maxlens[topic] = 0
+			c.Maxlens[topic] = c.DefaultMaxlen
 		}
 	}
 	return nil
@@ -87,7 +93,7 @@ func (p *Publisher) Publish(topic string, msgs ...*message.Message) error {
 
 		maxlen, ok := p.config.Maxlens[topic]
 		if !ok {
-			maxlen = 0
+			maxlen = p.config.DefaultMaxlen
 		}
 
 		id, err := p.client.XAdd(context.Background(), &redis.XAddArgs{
